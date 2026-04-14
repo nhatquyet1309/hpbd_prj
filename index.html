@@ -60,7 +60,6 @@
             border-color: #ff85a1;
         }
 
-        /* Music control animation */
         @keyframes pulse-pink {
             0% { box-shadow: 0 0 0 0 rgba(255, 133, 161, 0.7); }
             70% { box-shadow: 0 0 0 15px rgba(255, 133, 161, 0); }
@@ -164,34 +163,62 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 
-        // Firebase Setup
-        const firebaseConfig = JSON.parse(__firebase_config);
+        // Cấu hình Firebase Happy-f7bbc
+        const firebaseConfig = {
+            apiKey: "AIzaSyDsq-sCOdiUxHZ_fg2eokJQF_9JBpoSp08",
+            authDomain: "happy-f7bbc.firebaseapp.com",
+            projectId: "happy-f7bbc",
+            storageBucket: "happy-f7bbc.firebasestorage.app",
+            messagingSenderId: "824876085633",
+            appId: "1:824876085633:web:d8df034d794040e155b880",
+            measurementId: "G-BFL3FNSEED"
+        };
+
+        // Khởi tạo Firebase
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'melody-birthday-prod';
+        const analytics = getAnalytics(app);
 
-        let currentUser = null;
+        const appId = "happy-f7bbc";
         const OWNER_PASSWORD = "anhyeuemvclchucmungsinhnhatcongchuacuaanh"; 
 
+        let currentUser = null;
+
+        // Tối ưu xác thực để sửa lỗi admin-restricted-operation
         const initAuth = async () => {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-                await signInAnonymously(auth);
+            try {
+                // Kiểm tra nếu có token môi trường Canvas
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    // Đăng nhập ẩn danh cho GitHub/Production
+                    await signInAnonymously(auth);
+                }
+            } catch (err) {
+                console.error("Auth error:", err);
+                // Nếu lỗi restricted, thường là do chưa bật Anonymous trong Console
+                if (err.code === 'auth/admin-restricted-operation') {
+                    console.error("Vui lòng bật 'Anonymous' trong Firebase Console > Authentication > Sign-in method");
+                }
             }
         };
         initAuth();
 
-        onAuthStateChanged(auth, (user) => { currentUser = user; });
+        onAuthStateChanged(auth, (user) => { 
+            currentUser = user; 
+        });
 
-        // Navigation & Logic
+        // Navigation
         window.showScreen = (id) => {
             ['login-screen', 'owner-login-screen', 'guest-screen', 'owner-screen'].forEach(s => {
-                document.getElementById(s).classList.add('hidden');
+                const el = document.getElementById(s);
+                if (el) el.classList.add('hidden');
             });
-            document.getElementById(id).classList.remove('hidden');
+            const target = document.getElementById(id);
+            if (target) target.classList.remove('hidden');
             if (id === 'owner-screen') loadWishes();
         };
 
@@ -211,7 +238,7 @@
             const music = document.getElementById('bg-music');
             const btn = document.getElementById('music-btn');
             if (music.paused) {
-                music.play().catch(() => showMessageBox("Bấm lại để phát nhạc nhé!", "info"));
+                music.play().catch(() => showMessageBox("Bấm lại nút nhạc nhé!", "info"));
                 btn.classList.add('music-active');
             } else {
                 music.pause();
@@ -219,9 +246,12 @@
             }
         };
 
-        // Firestore Actions
+        // Gửi lời chúc vào collection 'wishes'
         window.submitWish = async () => {
-            if (!currentUser) return;
+            if (!currentUser) {
+                showMessageBox("Đang khởi tạo, chờ xíu nha...", "info");
+                return;
+            }
             const name = document.getElementById('guest-name').value.trim();
             const message = document.getElementById('guest-msg').value.trim();
 
@@ -235,21 +265,26 @@
             btn.textContent = "Đang gửi tâm tình...";
 
             try {
-                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'wishes'), {
-                    name, message, timestamp: serverTimestamp()
+                // Lưu thẳng vào root collection 'wishes' cho đơn giản trên project mới
+                await addDoc(collection(db, 'wishes'), {
+                    name, 
+                    message, 
+                    timestamp: serverTimestamp()
                 });
-                showMessageBox("Gửi thành công! Chúc em sinh nhật vui vẻ 💖");
+                showMessageBox("Gửi thành công! Cảm ơn bạn 💖");
                 document.getElementById('guest-name').value = '';
                 document.getElementById('guest-msg').value = '';
-                setTimeout(() => showScreen('login-screen'), 2000);
+                setTimeout(() => showScreen('login-screen'), 1500);
             } catch (e) {
-                showMessageBox("Lỗi rồi, gửi lại sau nha!", "error");
+                console.error(e);
+                showMessageBox("Lỗi gửi! Hãy bật Rules Firestore thành 'true'", "error");
             } finally {
                 btn.disabled = false;
                 btn.textContent = "Gửi lời chúc 🎈";
             }
         };
 
+        // Tải lời chúc
         let unsub = null;
         function loadWishes() {
             if (!currentUser) return;
@@ -258,14 +293,14 @@
             const container = document.getElementById('wishes-container');
             container.innerHTML = '<p class="text-center py-10 animate-pulse text-pink-400">Đang mở hộp thư bí mật...</p>';
 
-            unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'wishes'), (snap) => {
+            unsub = onSnapshot(collection(db, 'wishes'), (snap) => {
                 const wishes = [];
                 snap.forEach(doc => wishes.push(doc.data()));
                 wishes.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
 
                 container.innerHTML = '';
                 if (wishes.length === 0) {
-                    container.innerHTML = '<div class="text-center py-20 text-gray-400">Chưa có lời chúc nào hết... Hãy chờ nhé! 🍓</div>';
+                    container.innerHTML = '<div class="text-center py-20 text-gray-400">Chưa có lời chúc nào hết... 🍓</div>';
                     return;
                 }
 
@@ -283,13 +318,14 @@
                     container.appendChild(el);
                 });
             }, (err) => {
-                container.innerHTML = '<p class="text-red-400 text-center">Lỗi kết nối database.</p>';
+                console.error(err);
+                container.innerHTML = '<p class="text-red-400 text-center">Lỗi tải dữ liệu. Hãy kiểm tra Firestore Rules!</p>';
             });
         }
 
         function showMessageBox(text, type = "success") {
             const box = document.createElement('div');
-            box.className = `fixed bottom-10 left-1/2 transform -translate-x-1/2 px-8 py-4 rounded-2xl shadow-2xl text-white font-bold z-[100] transition-all duration-500 animate-bounce ${type === 'success' ? 'bg-pink-500' : 'bg-red-400'}`;
+            box.className = `fixed bottom-10 left-1/2 transform -translate-x-1/2 px-8 py-4 rounded-2xl shadow-2xl text-white font-bold z-[100] transition-all duration-500 ${type === 'success' ? 'bg-pink-500' : 'bg-red-400'}`;
             box.textContent = text;
             document.body.appendChild(box);
             setTimeout(() => {
