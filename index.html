@@ -165,7 +165,7 @@
         import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 
-        // Cấu hình Firebase Happy-f7bbc
+        // Cấu hình Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyDsq-sCOdiUxHZ_fg2eokJQF_9JBpoSp08",
             authDomain: "happy-f7bbc.firebaseapp.com",
@@ -176,33 +176,66 @@
             measurementId: "G-BFL3FNSEED"
         };
 
+        // Gán các hàm vào window ngay lập tức để tránh lỗi click
+        window.showScreen = (id) => {
+            const screens = ['login-screen', 'owner-login-screen', 'guest-screen', 'owner-screen'];
+            screens.forEach(s => {
+                const el = document.getElementById(s);
+                if (el) el.classList.add('hidden');
+            });
+            const target = document.getElementById(id);
+            if (target) {
+                target.classList.remove('hidden');
+                if (id === 'owner-screen') loadWishes();
+            }
+        };
+
+        window.logout = () => window.showScreen('login-screen');
+
+        window.toggleMusic = () => {
+            const music = document.getElementById('bg-music');
+            const btn = document.getElementById('music-btn');
+            if (music.paused) {
+                music.play().catch(() => showMessageBox("Nhấn lại để nghe nhạc nhé!", "info"));
+                btn.classList.add('music-active');
+            } else {
+                music.pause();
+                btn.classList.remove('music-active');
+            }
+        };
+
         // Khởi tạo Firebase
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const analytics = getAnalytics(app);
+        
+        // Analytics có thể bị chặn bởi AdBlock nên cần bọc trong try/catch
+        try {
+            getAnalytics(app);
+        } catch (e) {
+            console.warn("Analytics blocked or failed to init");
+        }
 
-        const appId = "happy-f7bbc";
         const OWNER_PASSWORD = "anhyeuemvclchucmungsinhnhatcongchuacuaanh"; 
-
         let currentUser = null;
 
-        // Sửa lỗi custom-token-mismatch bằng cách xử lý linh hoạt việc đăng nhập
+        // Xử lý đăng nhập
         const initAuth = async () => {
             try {
-                // Nếu đang dùng cấu hình Firebase mặc định của Canvas, dùng Custom Token
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token && !firebaseConfig.projectId.includes('happy-f7bbc')) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
+                // Kiểm tra token môi trường
+                const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                
+                if (initialToken && !firebaseConfig.projectId.includes('happy-f7bbc')) {
+                    await signInWithCustomToken(auth, initialToken);
                 } else {
-                    // Nếu dùng cấu hình riêng (happy-f7bbc), luôn sử dụng Anonymous để tránh mismatch
                     await signInAnonymously(auth);
                 }
             } catch (err) {
-                console.warn("Lỗi xác thực token, chuyển sang đăng nhập ẩn danh...", err);
+                console.warn("Auth transition to anonymous...");
                 try {
                     await signInAnonymously(auth);
                 } catch (e) {
-                    console.error("Không thể đăng nhập ẩn danh. Hãy bật 'Anonymous' trong Firebase Console!", e);
+                    console.error("Auth completely failed. Check Firebase console.");
                 }
             }
         };
@@ -212,45 +245,19 @@
             currentUser = user; 
         });
 
-        // Navigation
-        window.showScreen = (id) => {
-            ['login-screen', 'owner-login-screen', 'guest-screen', 'owner-screen'].forEach(s => {
-                const el = document.getElementById(s);
-                if (el) el.classList.add('hidden');
-            });
-            const target = document.getElementById(id);
-            if (target) target.classList.remove('hidden');
-            if (id === 'owner-screen') loadWishes();
-        };
-
         window.checkOwnerPassword = () => {
             const val = document.getElementById('owner-pass').value;
             if (val === OWNER_PASSWORD) {
-                showScreen('owner-screen');
+                window.showScreen('owner-screen');
                 document.getElementById('owner-pass').value = '';
             } else {
                 showMessageBox("Hổng đúng rồi Princess ơi! Thử lại nha 🐰", "error");
             }
         };
 
-        window.logout = () => showScreen('login-screen');
-
-        window.toggleMusic = () => {
-            const music = document.getElementById('bg-music');
-            const btn = document.getElementById('music-btn');
-            if (music.paused) {
-                music.play().catch(() => showMessageBox("Bấm lại nút nhạc nhé!", "info"));
-                btn.classList.add('music-active');
-            } else {
-                music.pause();
-                btn.classList.remove('music-active');
-            }
-        };
-
-        // Gửi lời chúc vào collection 'wishes'
         window.submitWish = async () => {
             if (!currentUser) {
-                showMessageBox("Đang khởi tạo quyền truy cập, thử lại sau giây lát!", "info");
+                showMessageBox("Đang khởi tạo, chờ xíu nha...", "info");
                 return;
             }
             const name = document.getElementById('guest-name').value.trim();
@@ -266,6 +273,7 @@
             btn.textContent = "Đang gửi tâm tình...";
 
             try {
+                // Dùng root collection 'wishes' để đơn giản hóa Rules
                 await addDoc(collection(db, 'wishes'), {
                     name, 
                     message, 
@@ -274,26 +282,22 @@
                 showMessageBox("Gửi thành công! Cảm ơn bạn 💖");
                 document.getElementById('guest-name').value = '';
                 document.getElementById('guest-msg').value = '';
-                setTimeout(() => showScreen('login-screen'), 1500);
+                setTimeout(() => window.showScreen('login-screen'), 1500);
             } catch (e) {
                 console.error(e);
-                showMessageBox("Lỗi gửi dữ liệu. Kiểm tra Rules Firestore!", "error");
+                showMessageBox("Lỗi gửi dữ liệu. Kiểm tra Firestore Rules!", "error");
             } finally {
                 btn.disabled = false;
                 btn.textContent = "Gửi lời chúc 🎈";
             }
         };
 
-        // Tải lời chúc
-        let unsub = null;
         function loadWishes() {
             if (!currentUser) return;
-            if (unsub) unsub();
-
             const container = document.getElementById('wishes-container');
             container.innerHTML = '<p class="text-center py-10 animate-pulse text-pink-400">Đang mở hộp thư bí mật...</p>';
 
-            unsub = onSnapshot(collection(db, 'wishes'), (snap) => {
+            onSnapshot(collection(db, 'wishes'), (snap) => {
                 const wishes = [];
                 snap.forEach(doc => wishes.push(doc.data()));
                 wishes.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
@@ -307,7 +311,7 @@
                 wishes.forEach(w => {
                     const el = document.createElement('div');
                     el.className = 'wish-item';
-                    const date = w.timestamp ? new Date(w.timestamp.seconds * 1000).toLocaleString('vi-VN') : 'Vừa mới đây';
+                    const date = w.timestamp ? new Date(w.timestamp.seconds * 1000).toLocaleString('vi-VN') : 'Mới đây';
                     el.innerHTML = `
                         <div class="flex justify-between items-center mb-2">
                             <span class="font-bold text-lg text-pink-600">💌 ${w.name}</span>
@@ -319,7 +323,7 @@
                 });
             }, (err) => {
                 console.error(err);
-                container.innerHTML = '<p class="text-red-400 text-center">Lỗi tải dữ liệu. Hãy kiểm tra Firestore Rules!</p>';
+                container.innerHTML = '<p class="text-red-400 text-center">Lỗi tải dữ liệu.</p>';
             });
         }
 
