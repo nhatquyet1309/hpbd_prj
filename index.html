@@ -187,21 +187,22 @@
 
         let currentUser = null;
 
-        // Tối ưu xác thực để sửa lỗi admin-restricted-operation
+        // Sửa lỗi custom-token-mismatch bằng cách xử lý linh hoạt việc đăng nhập
         const initAuth = async () => {
             try {
-                // Kiểm tra nếu có token môi trường Canvas
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                // Nếu đang dùng cấu hình Firebase mặc định của Canvas, dùng Custom Token
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token && !firebaseConfig.projectId.includes('happy-f7bbc')) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
-                    // Đăng nhập ẩn danh cho GitHub/Production
+                    // Nếu dùng cấu hình riêng (happy-f7bbc), luôn sử dụng Anonymous để tránh mismatch
                     await signInAnonymously(auth);
                 }
             } catch (err) {
-                console.error("Auth error:", err);
-                // Nếu lỗi restricted, thường là do chưa bật Anonymous trong Console
-                if (err.code === 'auth/admin-restricted-operation') {
-                    console.error("Vui lòng bật 'Anonymous' trong Firebase Console > Authentication > Sign-in method");
+                console.warn("Lỗi xác thực token, chuyển sang đăng nhập ẩn danh...", err);
+                try {
+                    await signInAnonymously(auth);
+                } catch (e) {
+                    console.error("Không thể đăng nhập ẩn danh. Hãy bật 'Anonymous' trong Firebase Console!", e);
                 }
             }
         };
@@ -249,7 +250,7 @@
         // Gửi lời chúc vào collection 'wishes'
         window.submitWish = async () => {
             if (!currentUser) {
-                showMessageBox("Đang khởi tạo, chờ xíu nha...", "info");
+                showMessageBox("Đang khởi tạo quyền truy cập, thử lại sau giây lát!", "info");
                 return;
             }
             const name = document.getElementById('guest-name').value.trim();
@@ -265,7 +266,6 @@
             btn.textContent = "Đang gửi tâm tình...";
 
             try {
-                // Lưu thẳng vào root collection 'wishes' cho đơn giản trên project mới
                 await addDoc(collection(db, 'wishes'), {
                     name, 
                     message, 
@@ -277,7 +277,7 @@
                 setTimeout(() => showScreen('login-screen'), 1500);
             } catch (e) {
                 console.error(e);
-                showMessageBox("Lỗi gửi! Hãy bật Rules Firestore thành 'true'", "error");
+                showMessageBox("Lỗi gửi dữ liệu. Kiểm tra Rules Firestore!", "error");
             } finally {
                 btn.disabled = false;
                 btn.textContent = "Gửi lời chúc 🎈";
